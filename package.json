@@ -1,0 +1,27 @@
+{
+  "name": "jev-laya",
+  "version": "1.0.0",
+  "private": true,
+  "description": "TypeSafe Jev-compatible /v1/systemone API + playground UI, served locally by laya",
+  "type": "module",
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=20.19"
+  },
+  "workspaces": [
+    "web"
+  ],
+  "scripts": {
+    "setup": "node scripts/setup.mjs",
+    "dev": "node scripts/dev.mjs",
+    "start": "node scripts/dev.mjs",
+    "dev:web": "npm run dev --workspace web",
+    "dev:server": "node scripts/dev.mjs --server-only",
+    "build": "npm run build --workspace web",
+    "preview": "npm run preview --workspace web",
+    "test": "npm run test:web && npm run test:server",
+    "test:web": "npm run test --workspace web",
+    "test:server": "node scripts/server.mjs check",
+    "clean": "node scripts/clean.mjs"
+  }
+}
