@@ -132,18 +132,35 @@ node scripts/server.mjs reload    # --reload 로 기동
 {
   "model": "jev-latest",            // 선택. jev-latest|jev-preview|router|auto → 자동 라우팅
                                    // laya|laya-english|laya-multilingual|laya-typed-decisions → 고정
-  "state": "결제가 중복되었어요.",  // string | object | array
+  "state": {                        // string | object | array 모두 가능
+    "message": "어제부터 39도 고열과 기침이 계속됩니다.",
+    "days_symptomatic": 3,
+    "max_temperature_c": 39.1
+  },
   "questions": {                   // 1개 이상
-    "is_urgent": { "type": "noul", "instructions": "긴급한가요?" },
-    "department": {
-      "type": "choice",
-      "instructions": "어느 팀이 담당할까요?",
-      "criteria": { "billing": "결제·환불", "technical": "장애" }   // 최대 255
+    "is_emergency": {
+      "type": "noul",
+      "instructions": "지금 당일 진료가 필요한 상황입니까?"
     },
-    "urgency": {
+    "handling": {
+      "type": "choice",
+      "instructions": "어떤 진료 경로가 가장 적절합니까?",
+      "criteria": {                                  // 최대 255
+        "self_care": "자가 관리",
+        "clinic": "내일 진료 예약",
+        "urgent_care": "당일 진료",
+        "emergency_room": "응급실"
+      }
+    },
+    "assessment": {
       "type": "score",
-      "instructions": "긴급도를 평가하세요.",
-      "criteria": ["낮음", "보통", "높음", "긴급"]                // 2~10개, **순서가 등급**
+      "instructions": "지금 이 환자의 진료 시급성을 평가하세요.",
+      "criteria": [                                  // 2~10개, **순서가 곧 등급**
+        "지연 가능: 내일 진료",
+        "당일 진료 필요",
+        "응급실 진료 필요",
+        "입원 또는 관찰 필요"
+      ]
     }
   }
 }
@@ -155,17 +172,46 @@ node scripts/server.mjs reload    # --reload 로 기동
 {
   "model": "laya-multilingual",
   "answers": {
-    "is_urgent": { "type": "noul", "noul": 0.5035 },
-    "department": {
-      "type": "choice", "choice": "billing",
-      "probabilities": { "billing": 0.9921, "technical": 0.0027, "sales": 0.0053 },
-      "confidence": 0.9532
+    "is_emergency": { "type": "noul", "noul": 0.6964 },
+    "handling": {
+      "type": "choice", "choice": "emergency_room",
+      "probabilities": {
+        "self_care": 0.0, "clinic": 0.0, "urgent_care": 0.0, "emergency_room": 1.0
+      },
+      "confidence": 1.0
     },
-    "urgency": { "type": "score", "score": 0.62, "legend": {}, "probabilities": {}, "confidence": 0.71 }
+    "assessment": {
+      "type": "score", "score": 2.4144,
+      "legend": {
+        "0": "지연 가능: 내일 진료", "1": "당일 진료 필요",
+        "2": "응급실 진료 필요", "3": "입원 또는 관찰 필요"
+      },
+      "probabilities": { "0": 0.0063, "1": 0.0335, "2": 0.4998, "3": 0.4604 },
+      "confidence": 0.3874
+    }
   },
-  "usage": { "input_tokens": 104, "output_tokens": 0 }
+  "usage": { "input_tokens": 426, "output_tokens": 0 }
 }
 ```
+
+> 위 값은 실제 실행 결과입니다. `handling` 은 확률이 1.0 으로 확신하지만 `assessment` 의
+> `confidence` 는 0.39 에 그칩니다. **낮은 confidence 자체가 "판단이 애매했다"는 신호**입니다.
+
+<details>
+<summary>응답 필드 해설</summary>
+
+| 필드 | 뜻 |
+|---|---|
+| `model` | 실제로 라우팅되어 실행된 laya 체크포인트 |
+| `noul` | 참(true)일 확률, 0~1 |
+| `choice` | 가장 높은 확률을 받은 선택지 키 |
+| `probabilities` | 선택지별 확률. `score` 는 등급 인덱스 기준 |
+| `confidence` | 확률 분포가 얼마나 한쪽으로 쏠렸는지 (0~1). 낮으면 근거 부족 |
+| `score` | 등급 인덱스의 기댓값 (예: 2.4144 → 2번과 3번 등급 사이) |
+| `legend` | 등급 인덱스 → 원문 criteria |
+| `usage.output_tokens` | 항상 0. laya 는 텍스트를 생성하지 않습니다 |
+
+</details>
 
 `curl` 로 확인:
 
@@ -173,17 +219,47 @@ node scripts/server.mjs reload    # --reload 로 기동
 curl --location 'http://127.0.0.1:8000/v1/systemone' \
 --header 'Content-Type: application/json' \
 --data '{
-  "state": "결제가 중복되었어요. 오늘 안에 환불해 주세요.",
+  "state": {
+    "message": "어제부터 39도 고열과 기침이 계속됩니다. 3일째 체온이 내려가지 않아 오늘 밤 응급실에 가야 할 것 같습니다.",
+    "days_symptomatic": 3,
+    "max_temperature_c": 39.1,
+    "age": 34,
+    "high_risk_conditions": false
+  },
   "questions": {
-    "is_urgent": { "type": "noul", "instructions": "Does this convey urgency?" },
-    "department": {
+    "is_emergency": { "type": "noul", "instructions": "지금 당일 진료가 필요한 상황입니까?" },
+    "handling": {
       "type": "choice",
-      "instructions": "Which team should handle this?",
-      "criteria": { "billing": "payments, invoicing, refunds", "technical": "bugs, outages" }
+      "instructions": "어떤 진료 경로가 가장 적절합니까?",
+      "criteria": {
+        "self_care": "자가 관리",
+        "clinic": "내일 진료 예약",
+        "urgent_care": "당일 진료",
+        "emergency_room": "응급실"
+      }
+    },
+    "assessment": {
+      "type": "score",
+      "instructions": "지금 이 환자의 진료 시급성을 평가하세요.",
+      "criteria": ["지연 가능: 내일 진료", "당일 진료 필요", "응급실 진료 필요", "입원 또는 관찰 필요"]
     }
   }
 }'
 ```
+
+<details>
+<summary>criteria 문구가 결과를 바꾼다는 주의</summary>
+
+같은 state 에서 질문만 바꿔 보면 확률이 크게 달라집니다.
+
+| criteria | 결과 |
+|---|---|
+| `{자가 관리, 내일 진료, 당일 진료, 응급실}` (도메인 특화) | `emergency_room` 확률 **1.0** |
+| `{자가 해결, 고객지원, 당일 처리, 즉시 호출}` (범용) | 네 옵션에 고르게 분산, conf **0.015** |
+
+범용적인 선택지 이름으로는 모델이 판단 근거를 잡지 못합니다. 실제 도메인의 용어를 그대로 쓰십시오.
+
+</details>
 
 ---
 
